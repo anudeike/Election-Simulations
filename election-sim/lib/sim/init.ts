@@ -1,4 +1,5 @@
 import type { SimConfig, SimState } from './types';
+import { beliefStats } from './histogram';
 import { createSeededRng, randomInRange, randomNormal } from '../rng';
 import { createPerlinNoise, perlinDetailToScale } from '../perlin';
 import { rectangularDistricting } from './districting/rectangular';
@@ -88,6 +89,7 @@ export function createSimState(config: SimConfig): SimState {
 
   const beliefs = new Float32Array(cellCount);
   const nextBeliefs = new Float32Array(cellCount);
+  const velocity = new Float32Array(cellCount);
   initBeliefs(beliefs, activeMask, config, rng, width, height);
   nextBeliefs.set(beliefs);
 
@@ -102,6 +104,8 @@ export function createSimState(config: SimConfig): SimState {
   const histogramBins = new Uint32Array(config.histogramBins);
   const borderSegments = computeBorderSegments(districtId, width, height);
 
+  const { mean: initialBeliefMean, std: initialBeliefStd } = beliefStats(beliefs, activeMask);
+
   const state: SimState = {
     config: { ...config, width, height },
     timestep: 0,
@@ -114,6 +118,9 @@ export function createSimState(config: SimConfig): SimState {
     districtBlueCounts,
     districtWinners,
     borderSegments,
+    initialBeliefMean,
+    initialBeliefStd,
+    velocity,
   };
 
   return state;

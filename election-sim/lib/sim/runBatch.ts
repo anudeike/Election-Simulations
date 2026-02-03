@@ -7,7 +7,7 @@ export interface SharePoint {
 }
 import { stepUpdate } from './update';
 import { runElection } from './election';
-import { computeHistogram, beliefStats } from './histogram';
+import { computeHistogram, beliefStats, polarizationCount } from './histogram';
 import { createSeededRng } from '../rng';
 
 function getRedShare(s: SimState): number {
@@ -31,6 +31,16 @@ export interface BatchRunEndStats {
   redSeats: number;
   blueSeats: number;
   tieSeats: number;
+  /** Count of agents >2σ from initial mean at end of run. */
+  polarizedFromInitial: number;
+  /** Count of agents >2σ from current mean at end of run. */
+  outliersFromCurrent: number;
+  /** Average |velocity| per timestep (when momentum enabled). */
+  avgVelocityMagnitudeHistory: number[];
+  /** Count of sign changes in mean belief derivative (oscillations). */
+  oscillationCount: number;
+  /** First timestep when max|v| < 0.01 for 5 consecutive steps, or -1. */
+  timeToStabilization: number;
 }
 
 function getEndOfRunStats(s: SimState): BatchRunEndStats {
@@ -46,7 +56,16 @@ function getEndOfRunStats(s: SimState): BatchRunEndStats {
   const redShare = total > 0 ? (redAgents / total) * 100 : 0;
   const blueShare = total > 0 ? (blueAgents / total) * 100 : 0;
 
-  const { mean, median } = beliefStats(s.beliefs, s.activeMask);
+  const { mean, median, std } = beliefStats(s.beliefs, s.activeMask);
+  const polarizedFromInitial = polarizationCount(
+    s.beliefs,
+    s.activeMask,
+    s.initialBeliefMean,
+    s.initialBeliefStd,
+    2
+  );
+  const outliersFromCurrent =
+    std > 0 ? polarizationCount(s.beliefs, s.activeMask, mean, std, 2) : 0;
 
   let redSeats = 0;
   let blueSeats = 0;
@@ -69,7 +88,33 @@ function getEndOfRunStats(s: SimState): BatchRunEndStats {
     redSeats,
     blueSeats,
     tieSeats,
+    polarizedFromInitial,
+    outliersFromCurrent,
+    avgVelocityMagnitudeHistory: [], // filled in runOneSimulation
+    oscillationCount: 0,
+    timeToStabilization: -1,
   };
+}
+
+function avgVelocityMagnitude(s: SimState): number {
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < s.velocity.length; i++) {
+    if (!s.activeMask[i]) continue;
+    sum += Math.abs(s.velocity[i]);
+    count++;
+  }
+  return count > 0 ? sum / count : 0;
+}
+
+function maxVelocityMagnitude(s: SimState): number {
+  let max = 0;
+  for (let i = 0; i < s.velocity.length; i++) {
+    if (!s.activeMask[i]) continue;
+    const v = Math.abs(s.velocity[i]);
+    if (v > max) max = v;
+  }
+  return max;
 }
 
 export interface BatchRunResult {
@@ -83,6 +128,11 @@ export interface BatchRunResult {
   redSeats: number;
   blueSeats: number;
   tieSeats: number;
+  polarizedFromInitial: number;
+  outliersFromCurrent: number;
+  avgVelocityMagnitudeHistory: number[];
+  oscillationCount: number;
+  timeToStabilization: number;
 }
 
 /**
@@ -105,9 +155,20 @@ export function runOneSimulation(
   const s = createSimState(cfg);
   const rng = createSeededRng(cfg.seed!);
   const history: SharePoint[] = [];
+  const avgVelocityMagnitudeHistory: number[] = [];
+  const STAB_THRESHOLD = 0.01;
+  const STAB_CONSECUTIVE = 5;
+  let oscillationCount = 0;
+  let timeToStabilization = -1;
+  let prevMeanBelief: number | null = null;
+  let prevMeanDirection = 0;
+  let stableCount = 0;
 
   const red0 = getRedShare(s);
   history.push({ red: red0, blue: 100 - red0 });
+  if (cfg.momentumConfig.enabled) {
+    avgVelocityMagnitudeHistory.push(avgVelocityMagnitude(s));
+  }
 
   for (let t = 0; t < numSteps - 1; t++) {
     stepUpdate(s, rng);
@@ -116,8 +177,34 @@ export function runOneSimulation(
     s.timestep++;
     const red = getRedShare(s);
     history.push({ red, blue: 100 - red });
+
+    if (cfg.momentumConfig.enabled) {
+      avgVelocityMagnitudeHistory.push(avgVelocityMagnitude(s));
+      const maxV = maxVelocityMagnitude(s);
+      if (maxV < STAB_THRESHOLD) {
+        stableCount++;
+        if (stableCount >= STAB_CONSECUTIVE && timeToStabilization < 0) {
+          timeToStabilization = s.timestep;
+        }
+      } else {
+        stableCount = 0;
+      }
+    }
+
+    const { mean: meanBelief } = beliefStats(s.beliefs, s.activeMask);
+    if (prevMeanBelief != null) {
+      const dir = meanBelief > prevMeanBelief ? 1 : meanBelief < prevMeanBelief ? -1 : 0;
+      if (dir !== 0 && prevMeanDirection !== 0 && dir !== prevMeanDirection) {
+        oscillationCount++;
+      }
+      prevMeanDirection = dir !== 0 ? dir : prevMeanDirection;
+    }
+    prevMeanBelief = meanBelief;
   }
 
   const endStats = getEndOfRunStats(s);
+  endStats.avgVelocityMagnitudeHistory = avgVelocityMagnitudeHistory;
+  endStats.oscillationCount = oscillationCount;
+  endStats.timeToStabilization = timeToStabilization;
   return { history, ...endStats };
 }

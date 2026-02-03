@@ -12,6 +12,22 @@ export interface ExtremityConfig {
   extremityStubbornness: number; // β ∈ [0, 1]
 }
 
+/** Belief momentum: inertia and overshoot in belief change. */
+export interface MomentumConfig {
+  enabled: boolean;
+  /** λ ∈ [0, 1]: fraction of velocity retained each step. */
+  retention: number;
+  /** Max velocity magnitude (configurable cap). */
+  maxVelocity: number;
+  /** Optional damping: reduces velocity in certain belief zones. */
+  damping?: {
+    /** Multiplier (0–1) when |b| < 15: v *= (1 - nearCenter). */
+    nearCenter?: number;
+    /** Multiplier (0–1) when |b| > 35: v *= (1 - nearExtremes). */
+    nearExtremes?: number;
+  };
+}
+
 /** Backlash: repulsion when exposed to extreme opposing beliefs. */
 export interface BacklashConfig {
   enabled: boolean;
@@ -53,6 +69,8 @@ export interface SimConfig {
   extremityConfig: ExtremityConfig;
   /** Backlash (repulsion from extreme opposition). */
   backlashConfig: BacklashConfig;
+  /** Belief momentum (inertia, overshoot). */
+  momentumConfig: MomentumConfig;
   /** Optional noise added each step [-noise, noise] (0 = off). */
   noise: number;
   /** Initial belief distribution. */
@@ -100,6 +118,12 @@ export interface SimState {
   districtWinners: Int8Array;
   /** Cached border segments for overlay [x0,y0,x1,y1,...]. */
   borderSegments: number[];
+  /** Mean of beliefs at t=0 (for polarization vs. initial). */
+  initialBeliefMean: number;
+  /** Std dev of beliefs at t=0 (for polarization vs. initial). */
+  initialBeliefStd: number;
+  /** Belief velocity (momentum) per agent; parallel to beliefs. */
+  velocity: Float32Array;
 }
 
 /** View mode for the grid. */
@@ -117,6 +141,14 @@ export const DEFAULT_UPDATE_FUNCTION: UpdateFunctionConfig = {
 export const DEFAULT_EXTREMITY: ExtremityConfig = {
   enabled: false,
   extremityStubbornness: 0,
+};
+
+/** Default momentum config (disabled). */
+export const DEFAULT_MOMENTUM: MomentumConfig = {
+  enabled: false,
+  retention: 0.7,
+  maxVelocity: 2,
+  damping: { nearCenter: 0, nearExtremes: 0 },
 };
 
 /** Default backlash config (disabled). */
@@ -141,6 +173,7 @@ export const DEFAULT_CONFIG: Partial<SimConfig> = {
   updateFunction: DEFAULT_UPDATE_FUNCTION,
   extremityConfig: DEFAULT_EXTREMITY,
   backlashConfig: DEFAULT_BACKLASH,
+  momentumConfig: DEFAULT_MOMENTUM,
   noise: 0,
   initialBeliefs: 'uniform',
   initialBeliefParam: 15,

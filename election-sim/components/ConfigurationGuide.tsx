@@ -86,6 +86,16 @@ export function ConfigurationGuide() {
       </section>
 
       <section className="mb-6">
+        <h3 className="text-lg font-semibold text-slate-100 mb-2">Belief momentum</h3>
+        <p className="mb-2">When enabled, agents accumulate <strong>velocity</strong> (momentum) instead of updating beliefs directly. Beliefs exhibit inertia, overshoot, and oscillations. <strong>Enable</strong>: Toggle on/off.</p>
+        <p className="mb-2"><strong>Momentum retention λ</strong> (0–1): Fraction of current velocity carried to the next step. Default 0.7. Higher λ → more inertia, slower decay. λ = 0 → instant response. λ = 1 → velocity never decays (only capped by max velocity).</p>
+        <p className="mb-2"><strong>Max velocity</strong> (0–10): Configurable cap on velocity magnitude. Prevents runaway growth when λ is high. Default 2. Beliefs can change by at most this much per step from velocity alone.</p>
+        <p className="mb-2"><strong>Damping near center</strong> (0–1): When |b| &lt; 15, multiply velocity by (1 − damping). 0 = no effect. Higher values slow agents near the center; use to reduce oscillation around 0.</p>
+        <p className="mb-2"><strong>Damping near extremes</strong> (0–1): When |b| &gt; 35, multiply velocity by (1 − damping). Prevents runaway polarization; extremists slow down as they approach ±50.</p>
+        <p className="mb-2"><strong>Batch metrics</strong> (when momentum enabled): Average velocity magnitude over time, oscillation count (sign changes in mean belief derivative), time to stabilization (first t when max|v| &lt; 0.01 for 5 consecutive steps).</p>
+      </section>
+
+      <section className="mb-6">
         <h3 className="text-lg font-semibold text-slate-100 mb-2">Neighborhood</h3>
         <p><strong>Von Neumann (4)</strong>: up, down, left, right. <strong>Moore (8)</strong>: plus the four diagonals. Edge cells only count neighbors that exist.</p>
       </section>
@@ -131,6 +141,11 @@ export function ConfigurationGuide() {
               <tr><td className="p-2 border-b border-slate-600">Extremity β</td><td className="p-2 border-b border-slate-600">Reduces susceptibility for extreme beliefs.</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Backlash</td><td className="p-2 border-b border-slate-600">Repulsion from extreme opposing beliefs (toggle + trigger, scope, mode, strength).</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Trigger scope</td><td className="p-2 border-b border-slate-600">Per neighbor (each j) or per agent (one check).</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Momentum</td><td className="p-2 border-b border-slate-600">When enabled, beliefs accumulate velocity; inertia and overshoot.</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Momentum retention λ</td><td className="p-2 border-b border-slate-600">Fraction of velocity retained each step (0–1).</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Max velocity</td><td className="p-2 border-b border-slate-600">Cap on velocity magnitude (0–10); prevents runaway growth.</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Damping near center</td><td className="p-2 border-b border-slate-600">Reduces velocity when |b| &lt; 15 (0–1).</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Damping near extremes</td><td className="p-2 border-b border-slate-600">Reduces velocity when |b| &gt; 35; prevents runaway polarization.</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Step noise</td><td className="p-2 border-b border-slate-600">Random jitter each step (0 = off).</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Neighborhood</td><td className="p-2 border-b border-slate-600">4 or 8 neighbors per cell.</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Initial beliefs</td><td className="p-2 border-b border-slate-600">Uniform, normal, bimodal, or Perlin.</td></tr>

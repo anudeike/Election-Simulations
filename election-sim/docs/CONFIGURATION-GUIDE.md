@@ -130,6 +130,29 @@ When **enabled**, agents can **move away** from extreme opposing beliefs (repuls
 
 ---
 
+## Belief momentum
+
+When **enabled**, agents accumulate **velocity** (momentum) instead of updating beliefs directly. Beliefs exhibit inertia, overshoot, and oscillations.
+
+**Update model** (each timestep):
+
+1. **Velocity**: \(v_i^{new} = \lambda v_i + \Delta_i\) (where \(\Delta_i\) is the susceptibility-scaled influence from neighbors, backlash, etc.).
+2. **Damping** (optional): Reduce velocity when \(|b_i|\) is small (near center) or large (near extremes).
+3. **Clamp velocity**: \(v_i^{new} \in [-v_{max}, v_{max}]\).
+4. **Belief**: \(b_i^{new} = b_i + v_i^{new}\); then clamp to [-50, 50].
+
+### Parameters
+
+- **Enable**: Toggle momentum on/off. When off, the update uses the standard direct formula.
+- **Momentum retention λ** (0–1): Fraction of current velocity carried to the next step. Default 0.7. Higher λ → more inertia, slower decay of motion. λ = 0 → no momentum (instant response). λ = 1 → velocity never decays on its own (only capped by max velocity).
+- **Max velocity** (0–10): Configurable cap on velocity magnitude. Prevents runaway growth when λ is high. Default 2. Beliefs can change by at most this much per step from velocity alone.
+- **Damping near center** (0–1): When \(|b_i| < 15\), multiply velocity by \((1 - \text{damping})\). 0 = no effect. Higher values slow agents near the center (moderate beliefs). Use to reduce oscillation around 0.
+- **Damping near extremes** (0–1): When \(|b_i| > 35\), multiply velocity by \((1 - \text{damping})\). Prevents runaway polarization; extremists slow down as they approach ±50.
+
+**Batch metrics** (when momentum enabled): Average velocity magnitude over time, oscillation count (sign changes in mean belief derivative), and time to stabilization (first timestep when max|v| < 0.01 for 5 consecutive steps).
+
+---
+
 ## Neighborhood
 
 - **Von Neumann (4)**: Only up, down, left, right.
@@ -196,6 +219,11 @@ Each run uses the **same** configuration but a **different** seed (derived from 
 | Trigger scope      | Per neighbor (check each j) or per agent (one check per agent). |
 | Backlash mode      | Piecewise, smooth (logistic), or identity push. |
 | Backlash strength ρ| Repulsion strength (0–2). |
+| Momentum           | When enabled, beliefs accumulate velocity; inertia and overshoot. |
+| Momentum retention λ | Fraction of velocity retained each step (0–1). |
+| Max velocity       | Cap on velocity magnitude (0–10); prevents runaway growth. |
+| Damping near center | Reduces velocity when \|b\| < 15 (0–1). |
+| Damping near extremes | Reduces velocity when \|b\| > 35; prevents runaway polarization. |
 | Step noise         | Random jitter added each step (0 = off). |
 | Neighborhood       | 4 or 8 neighbors per cell. |
 | Initial beliefs    | How the grid is initialized (uniform, normal, bimodal, or Perlin). |

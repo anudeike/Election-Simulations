@@ -1,7 +1,9 @@
 'use client';
 
-import type { SimConfig, UpdateFunctionConfig, ExtremityConfig, BacklashConfig } from '@/lib/sim/types';
+import { useRef } from 'react';
+import type { SimConfig, UpdateFunctionConfig, ExtremityConfig, BacklashConfig, MomentumConfig } from '@/lib/sim/types';
 import { gridDimensions } from '@/lib/sim/init';
+import { parseAndValidateConfig, downloadConfig } from '@/lib/sim/configIO';
 import { cn } from '@/lib/utils';
 
 interface ConfigPanelProps {
@@ -20,6 +22,7 @@ const GRID_PRESETS = [
 ];
 
 export function ConfigPanel({ config, onChange, disabled }: ConfigPanelProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { width, height } = gridDimensions(config.agentCount);
   const customPreset = GRID_PRESETS.find((p) => p.w === width && p.h === height) ?? GRID_PRESETS[GRID_PRESETS.length - 1];
 
@@ -33,9 +36,67 @@ export function ConfigPanel({ config, onChange, disabled }: ConfigPanelProps) {
     }
   };
 
+  const handleSaveConfig = () => {
+    downloadConfig(config);
+  };
+
+  const handleUploadConfig = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result;
+      if (typeof text !== 'string') {
+        alert('Unable to parse configuration: file could not be read.');
+        return;
+      }
+      const parsed = parseAndValidateConfig(text);
+      if (parsed === null) {
+        alert('Unable to parse configuration: invalid or malformed JSON.');
+        return;
+      }
+      onChange(parsed);
+    };
+    reader.onerror = () => {
+      alert('Unable to parse configuration: file could not be read.');
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className={cn('flex flex-col gap-4 w-72 p-4 rounded-lg bg-slate-800/80 border border-slate-700', disabled && 'opacity-70 pointer-events-none')}>
       <h2 className="text-lg font-semibold text-slate-100">Configuration</h2>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={handleSaveConfig}
+          disabled={disabled}
+          className="flex-1 px-3 py-1.5 rounded text-sm bg-slate-600 text-slate-200 hover:bg-slate-500 disabled:opacity-50"
+        >
+          Save config
+        </button>
+        <button
+          type="button"
+          onClick={handleUploadConfig}
+          disabled={disabled}
+          className="flex-1 px-3 py-1.5 rounded text-sm bg-slate-600 text-slate-200 hover:bg-slate-500 disabled:opacity-50"
+        >
+          Upload config
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+      </div>
 
       <div>
         <label className="block text-sm text-slate-300 mb-1">Agent count (100–5000)</label>
@@ -403,6 +464,94 @@ export function ConfigPanel({ config, onChange, disabled }: ConfigPanelProps) {
       )}
 
       <div>
+        <label className="block text-sm text-slate-300 mb-1">Belief momentum</label>
+        <label className="flex items-center gap-2 text-sm text-slate-300" title="Momentum causes beliefs to continue changing even after influence weakens.">
+          <input
+            type="checkbox"
+            checked={config.momentumConfig.enabled}
+            onChange={(e) => update({ momentumConfig: { ...config.momentumConfig, enabled: e.target.checked } })}
+            className="rounded"
+          />
+          Enable
+        </label>
+      </div>
+      {config.momentumConfig.enabled && (
+        <>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Momentum retention λ (0–1)</label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={config.momentumConfig.retention}
+              onChange={(e) => update({ momentumConfig: { ...config.momentumConfig, retention: +e.target.value } })}
+              className="w-full"
+            />
+            <span className="text-xs text-slate-400">{config.momentumConfig.retention}</span>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Max velocity (0–10)</label>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              step={0.1}
+              value={config.momentumConfig.maxVelocity}
+              onChange={(e) => update({ momentumConfig: { ...config.momentumConfig, maxVelocity: Math.max(0, Math.min(10, +e.target.value || 2)) } })}
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Damping near center (0–1)</label>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={config.momentumConfig.damping?.nearCenter ?? 0}
+              onChange={(e) =>
+                update({
+                  momentumConfig: {
+                    ...config.momentumConfig,
+                    damping: {
+                      ...config.momentumConfig.damping,
+                      nearCenter: Math.max(0, Math.min(1, +e.target.value || 0)),
+                    },
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+            <p className="text-xs text-slate-400 mt-0.5">Reduces velocity when |b| &lt; 15.</p>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Damping near extremes (0–1)</label>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={config.momentumConfig.damping?.nearExtremes ?? 0}
+              onChange={(e) =>
+                update({
+                  momentumConfig: {
+                    ...config.momentumConfig,
+                    damping: {
+                      ...config.momentumConfig.damping,
+                      nearExtremes: Math.max(0, Math.min(1, +e.target.value || 0)),
+                    },
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+            <p className="text-xs text-slate-400 mt-0.5">Reduces velocity when |b| &gt; 35; prevents runaway polarization.</p>
+          </div>
+        </>
+      )}
+
+      <div>
         <label className="block text-sm text-slate-300 mb-1">Initial beliefs</label>
         <select
           value={config.initialBeliefs}
@@ -468,25 +617,25 @@ export function ConfigPanel({ config, onChange, disabled }: ConfigPanelProps) {
       </div>
 
       <div>
-        <label className="block text-sm text-slate-300 mb-1">Steps/sec (1–60)</label>
+        <label className="block text-sm text-slate-300 mb-1">Steps/sec (1–540)</label>
         <input
           type="number"
           min={1}
-          max={60}
+          max={540}
           value={config.stepsPerSecond}
-          onChange={(e) => update({ stepsPerSecond: Math.max(1, Math.min(60, +e.target.value || 4)) })}
+          onChange={(e) => update({ stepsPerSecond: Math.max(1, Math.min(540, +e.target.value || 4)) })}
           className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
         />
       </div>
 
       <div>
-        <label className="block text-sm text-slate-300 mb-1">Steps per frame (1–10)</label>
+        <label className="block text-sm text-slate-300 mb-1">Steps per frame (1–270)</label>
         <input
           type="number"
           min={1}
-          max={10}
+          max={270}
           value={config.stepsPerFrame}
-          onChange={(e) => update({ stepsPerFrame: Math.max(1, Math.min(10, +e.target.value || 1)) })}
+          onChange={(e) => update({ stepsPerFrame: Math.max(1, Math.min(270, +e.target.value || 1)) })}
           className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
         />
       </div>

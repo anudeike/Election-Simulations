@@ -1,4 +1,4 @@
-import type { SimConfig, SimState, UpdateFunctionConfig, ExtremityConfig } from './types';
+import type { SimConfig, SimState, UpdateFunctionConfig, ExtremityConfig, MomentumConfig } from './types';
 import { computeBacklashDelta } from './backlash';
 import { randomInRange } from '../rng';
 
@@ -92,18 +92,39 @@ function applyExtremity(si: number, belief: number, ext: ExtremityConfig): numbe
   return clamp01(si * (1 - β * ei));
 }
 
+const CENTER_THRESHOLD = 15;
+const EXTREME_THRESHOLD = 35;
+
+function applyVelocityDamping(v: number, bi: number, mc: MomentumConfig): number {
+  const d = mc.damping;
+  if (!d) return v;
+  let out = v;
+  if (Math.abs(bi) < CENTER_THRESHOLD && (d.nearCenter ?? 0) > 0) {
+    out *= 1 - Math.max(0, Math.min(1, d.nearCenter!));
+  }
+  if (Math.abs(bi) > EXTREME_THRESHOLD && (d.nearExtremes ?? 0) > 0) {
+    out *= 1 - Math.max(0, Math.min(1, d.nearExtremes!));
+  }
+  return out;
+}
+
 /**
  * Common update pipeline: m_i, d_i, s_i, b_new = b_i + s_i(m_i - b_i), clamp.
+ * With momentum: v_new = λv + s_i·Δ_i, damp, clamp v, b_new = b_i + v_new.
  * Optional noise after update; extremity applied to s_i.
  */
 export function stepUpdate(state: SimState, rng: () => number): void {
-  const { config, beliefs, nextBeliefs, activeMask } = state;
-  const { width, height, neighborhood, updateFunction, extremityConfig, backlashConfig, noise } = config;
+  const { config, beliefs, nextBeliefs, activeMask, velocity } = state;
+  const { width, height, neighborhood, updateFunction, extremityConfig, backlashConfig, momentumConfig, noise } = config;
   const n = beliefs.length;
+  const useMomentum = momentumConfig.enabled;
+  const λ = Math.max(0, Math.min(1, momentumConfig.retention));
+  const vMax = Math.max(0, Math.min(10, momentumConfig.maxVelocity));
 
   for (let idx = 0; idx < n; idx++) {
     if (!activeMask[idx]) {
       nextBeliefs[idx] = beliefs[idx];
+      if (useMomentum) velocity[idx] = 0;
       continue;
     }
 
@@ -124,7 +145,18 @@ export function stepUpdate(state: SimState, rng: () => number): void {
     si = applyExtremity(si, bi, extremityConfig);
 
     const Δi = computeBacklashDelta(bi, mi, neighborBeliefs, backlashConfig);
-    let newBelief = bi + si * Δi;
+    const scaledΔ = si * Δi;
+
+    let newBelief: number;
+    if (useMomentum) {
+      let vNew = λ * velocity[idx] + scaledΔ;
+      vNew = applyVelocityDamping(vNew, bi, momentumConfig);
+      vNew = Math.max(-vMax, Math.min(vMax, vNew));
+      velocity[idx] = vNew;
+      newBelief = bi + vNew;
+    } else {
+      newBelief = bi + scaledΔ;
+    }
     if (noise > 0) newBelief += randomInRange(rng, -noise, noise);
     nextBeliefs[idx] = clampBelief(newBelief);
   }

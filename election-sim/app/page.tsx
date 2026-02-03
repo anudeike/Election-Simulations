@@ -7,16 +7,18 @@ import { Histogram } from '@/components/Histogram';
 import { ShareHistoryChart, type SharePoint } from '@/components/ShareHistoryChart';
 import { BatchShareChart } from '@/components/BatchShareChart';
 import { BatchEndDiffChart } from '@/components/BatchEndDiffChart';
+import { BatchPolarizationChart } from '@/components/BatchPolarizationChart';
+import { BatchVelocityChart } from '@/components/BatchVelocityChart';
 import { BatchDiffHistogram } from '@/components/BatchDiffHistogram';
 import { ConfigurationGuide } from '@/components/ConfigurationGuide';
 import { BeliefColorMap } from '@/components/BeliefColorMap';
 import type { SimConfig, SimState, GridViewMode } from '@/lib/sim/types';
 import { runOneSimulation, type BatchRunEndStats } from '@/lib/sim/runBatch';
-import { DEFAULT_CONFIG, DEFAULT_UPDATE_FUNCTION, DEFAULT_EXTREMITY, DEFAULT_BACKLASH } from '@/lib/sim/types';
+import { DEFAULT_CONFIG, DEFAULT_UPDATE_FUNCTION, DEFAULT_EXTREMITY, DEFAULT_BACKLASH, DEFAULT_MOMENTUM } from '@/lib/sim/types';
 import { createSimState, gridDimensions } from '@/lib/sim/init';
 import { stepUpdate } from '@/lib/sim/update';
 import { runElection } from '@/lib/sim/election';
-import { computeHistogram, beliefStats } from '@/lib/sim/histogram';
+import { computeHistogram, beliefStats, polarizationCount } from '@/lib/sim/histogram';
 import { createSeededRng } from '@/lib/rng';
 
 const INITIAL_CONFIG: SimConfig = {
@@ -27,6 +29,7 @@ const INITIAL_CONFIG: SimConfig = {
   updateFunction: DEFAULT_UPDATE_FUNCTION,
   extremityConfig: DEFAULT_EXTREMITY,
   backlashConfig: DEFAULT_BACKLASH,
+  momentumConfig: DEFAULT_MOMENTUM,
   noise: 0,
   initialBeliefs: 'uniform',
   initialBeliefParam: 15,
@@ -168,6 +171,11 @@ export default function Home() {
         redSeats: result.redSeats,
         blueSeats: result.blueSeats,
         tieSeats: result.tieSeats,
+        polarizedFromInitial: result.polarizedFromInitial,
+        outliersFromCurrent: result.outliersFromCurrent,
+        avgVelocityMagnitudeHistory: result.avgVelocityMagnitudeHistory,
+        oscillationCount: result.oscillationCount,
+        timeToStabilization: result.timeToStabilization,
       });
       setBatchResults([...runHistories]);
       setBatchEndStats([...endStats]);
@@ -223,7 +231,21 @@ export default function Home() {
   const redSeats = state ? Array.from(state.districtWinners).filter((w) => w === 1).length : 0;
   const blueSeats = state ? Array.from(state.districtWinners).filter((w) => w === -1).length : 0;
   const tieSeats = state ? Array.from(state.districtWinners).filter((w) => w === 0).length : 0;
-  const stats = state ? beliefStats(state.beliefs, state.activeMask) : { mean: 0, median: 0 };
+  const stats = state ? beliefStats(state.beliefs, state.activeMask) : { mean: 0, median: 0, std: 0 };
+  const polarizedFromInitial =
+    state
+      ? polarizationCount(
+          state.beliefs,
+          state.activeMask,
+          state.initialBeliefMean,
+          state.initialBeliefStd,
+          2
+        )
+      : 0;
+  const outliersFromCurrent =
+    state && stats.std > 0
+      ? polarizationCount(state.beliefs, state.activeMask, stats.mean, stats.std, 2)
+      : 0;
 
   return (
     <div className="min-h-screen p-4 flex flex-col">
@@ -417,6 +439,14 @@ export default function Home() {
                     <dd className="text-blue-400">{state ? blueSeats : '—'}</dd>
                     <dt className="text-slate-400">Ties</dt>
                     <dd className="text-purple-400">{state ? tieSeats : '—'}</dd>
+                    <dt className="text-slate-400">Polarized (vs. initial)</dt>
+                    <dd className="text-slate-100" title="Agents &gt;2σ from initial mean">
+                      {state ? polarizedFromInitial : '—'}
+                    </dd>
+                    <dt className="text-slate-400">Outliers (vs. current)</dt>
+                    <dd className="text-slate-100" title="Agents &gt;2σ from current mean">
+                      {state ? outliersFromCurrent : '—'}
+                    </dd>
                   </dl>
                 </div>
                 <div className="flex-1">
@@ -439,6 +469,70 @@ export default function Home() {
                   Running simulation {batchProgress.currentRun} of {batchProgress.totalRuns}…
                 </div>
               )}
+              {batchEndStats.length > 0 && (
+                <div className="rounded-lg bg-slate-800/80 border border-slate-700 p-4 min-w-[280px]">
+                  <h3 className="text-sm font-semibold text-slate-200 mb-2">
+                    Batch stats (average of end state per run)
+                  </h3>
+                  <dl className="grid grid-cols-2 gap-1 text-sm">
+                    <dt className="text-slate-400">Runs</dt>
+                    <dd className="text-slate-100">{batchEndStats.length}</dd>
+                    <dt className="text-slate-400">Timestep</dt>
+                    <dd className="text-slate-100">{batchTimesteps - 1}</dd>
+                    <dt className="text-slate-400">Mean</dt>
+                    <dd className="text-slate-100">
+                      {(batchEndStats.reduce((a, s) => a + s.mean, 0) / batchEndStats.length).toFixed(2)}
+                    </dd>
+                    <dt className="text-slate-400">Median</dt>
+                    <dd className="text-slate-100">
+                      {(batchEndStats.reduce((a, s) => a + s.median, 0) / batchEndStats.length).toFixed(2)}
+                    </dd>
+                    <dt className="text-slate-400">Red share</dt>
+                    <dd className="text-red-400">
+                      {(batchEndStats.reduce((a, s) => a + s.redShare, 0) / batchEndStats.length).toFixed(1)}%
+                    </dd>
+                    <dt className="text-slate-400">Blue share</dt>
+                    <dd className="text-blue-400">
+                      {(batchEndStats.reduce((a, s) => a + s.blueShare, 0) / batchEndStats.length).toFixed(1)}%
+                    </dd>
+                    <dt className="text-slate-400">Red seats</dt>
+                    <dd className="text-red-400">
+                      {(batchEndStats.reduce((a, s) => a + s.redSeats, 0) / batchEndStats.length).toFixed(2)}
+                    </dd>
+                    <dt className="text-slate-400">Blue seats</dt>
+                    <dd className="text-blue-400">
+                      {(batchEndStats.reduce((a, s) => a + s.blueSeats, 0) / batchEndStats.length).toFixed(2)}
+                    </dd>
+                    <dt className="text-slate-400">Ties</dt>
+                    <dd className="text-purple-400">
+                      {(batchEndStats.reduce((a, s) => a + s.tieSeats, 0) / batchEndStats.length).toFixed(2)}
+                    </dd>
+                    <dt className="text-slate-400">Polarized (vs. initial)</dt>
+                    <dd className="text-slate-100" title="Avg count &gt;2σ from initial mean">
+                      {(batchEndStats.reduce((a, s) => a + s.polarizedFromInitial, 0) / batchEndStats.length).toFixed(1)}
+                    </dd>
+                    <dt className="text-slate-400">Outliers (vs. current)</dt>
+                    <dd className="text-slate-100" title="Avg count &gt;2σ from current mean">
+                      {(batchEndStats.reduce((a, s) => a + s.outliersFromCurrent, 0) / batchEndStats.length).toFixed(1)}
+                    </dd>
+                    <dt className="text-slate-400">Oscillations</dt>
+                    <dd className="text-slate-100" title="Avg sign changes in mean belief derivative">
+                      {(batchEndStats.reduce((a, s) => a + s.oscillationCount, 0) / batchEndStats.length).toFixed(1)}
+                    </dd>
+                    <dt className="text-slate-400">Time to stabilize</dt>
+                    <dd className="text-slate-100" title="Avg first t when max|v| &lt; 0.01 for 5 steps (-1 = never)">
+                      {batchEndStats.some((s) => s.timeToStabilization >= 0)
+                        ? (
+                            batchEndStats
+                              .filter((s) => s.timeToStabilization >= 0)
+                              .reduce((a, s) => a + s.timeToStabilization, 0) /
+                            batchEndStats.filter((s) => s.timeToStabilization >= 0).length
+                          ).toFixed(1)
+                        : '—'}
+                    </dd>
+                  </dl>
+                </div>
+              )}
               <div className="mt-4">
                 <h3 className="text-sm font-semibold text-slate-200 mb-2">
                   Mean red / blue % over time ({batchResults.length} runs)
@@ -451,6 +545,24 @@ export default function Home() {
                 </h3>
                 <BatchEndDiffChart endDiffs={batchEndStats} width={560} height={240} />
               </div>
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-slate-200 mb-2">
+                  Polarized & outliers per run (end of run)
+                </h3>
+                <BatchPolarizationChart data={batchEndStats} width={560} height={240} />
+              </div>
+              {batchEndStats.some((s) => s.avgVelocityMagnitudeHistory.length > 0) && (
+                <div className="mt-4">
+                  <h3 className="text-sm font-semibold text-slate-200 mb-2">
+                    Avg velocity magnitude over time (momentum runs)
+                  </h3>
+                  <BatchVelocityChart
+                    runHistories={batchEndStats.map((s) => s.avgVelocityMagnitudeHistory)}
+                    width={560}
+                    height={220}
+                  />
+                </div>
+              )}
               <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-200 mb-2">

@@ -28,9 +28,12 @@ export function computeHistogram(state: SimState): void {
 }
 
 /**
- * Compute mean and median from current beliefs (active only).
+ * Compute mean, median, and standard deviation from current beliefs (active only).
  */
-export function beliefStats(beliefs: Float32Array, activeMask: Uint8Array): { mean: number; median: number } {
+export function beliefStats(
+  beliefs: Float32Array,
+  activeMask: Uint8Array
+): { mean: number; median: number; std: number } {
   const arr: number[] = [];
   let sum = 0;
   let count = 0;
@@ -41,9 +44,38 @@ export function beliefStats(beliefs: Float32Array, activeMask: Uint8Array): { me
     count++;
   }
   const mean = count > 0 ? sum / count : 0;
-  if (arr.length === 0) return { mean: 0, median: 0 };
+  if (arr.length === 0) return { mean: 0, median: 0, std: 0 };
+  let variance = 0;
+  for (let i = 0; i < beliefs.length; i++) {
+    if (!activeMask[i]) continue;
+    const d = beliefs[i] - mean;
+    variance += d * d;
+  }
+  variance = count > 0 ? variance / count : 0;
+  const std = Math.sqrt(variance);
   arr.sort((a, b) => a - b);
   const mid = Math.floor(arr.length / 2);
   const median = arr.length % 2 !== 0 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
-  return { mean, median };
+  return { mean, median, std };
+}
+
+/**
+ * Count agents whose belief is more than `numStd` standard deviations away from a reference mean.
+ * If refStd is 0, returns 0 (no outliers by that definition).
+ */
+export function polarizationCount(
+  beliefs: Float32Array,
+  activeMask: Uint8Array,
+  refMean: number,
+  refStd: number,
+  numStd: number = 2
+): number {
+  if (refStd <= 0) return 0;
+  const threshold = numStd * refStd;
+  let count = 0;
+  for (let i = 0; i < beliefs.length; i++) {
+    if (!activeMask[i]) continue;
+    if (Math.abs(beliefs[i] - refMean) > threshold) count++;
+  }
+  return count;
 }
