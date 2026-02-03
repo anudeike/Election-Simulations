@@ -14,7 +14,7 @@ export function ConfigurationGuide() {
           <li><strong>Grid</strong>: Each cell has one agent with a <strong>belief</strong> in [-50, 50].</li>
           <li><strong>Voting</strong>: Each timestep, agents vote <strong>red</strong> if belief ≥ 0, <strong>blue</strong> if belief &lt; 0.</li>
           <li><strong>Districts</strong>: The grid is divided into fixed districts. Each district’s winner is the majority color (red/blue); ties show as purple.</li>
-          <li><strong>Update</strong>: Each timestep, every agent updates their belief based on <strong>neighbors</strong> and the chosen <strong>update function</strong>. Beliefs are clamped to [-50, 50].</li>
+          <li><strong>Update</strong>: Each timestep, every agent updates their belief based on <strong>neighbors</strong> and the chosen <strong>update function</strong>. Optional <strong>influencer events</strong> can add influence from rare radical actors. Beliefs are clamped to [-50, 50].</li>
         </ul>
       </section>
 
@@ -26,7 +26,8 @@ export function ConfigurationGuide() {
           <li>Compute <strong>distance</strong> d = |b − m|.</li>
           <li>Compute <strong>susceptibility</strong> s ∈ [0, 1] from the chosen formula.</li>
           <li>Optionally apply <strong>extremity stubbornness</strong>.</li>
-          <li>Update: b_new = b + s(m − b); then optional noise; then clamp to [-50, 50].</li>
+          <li>Compute <strong>backlash</strong> and <strong>influencer</strong> terms (if enabled).</li>
+          <li>Update: b_new = b + s·Δ_local + Δ_influencer; then optional noise; then clamp to [-50, 50].</li>
         </ol>
         <p>Higher susceptibility → agent moves more toward neighbors; lower → agent resists change.</p>
       </section>
@@ -96,6 +97,17 @@ export function ConfigurationGuide() {
       </section>
 
       <section className="mb-6">
+        <h3 className="text-lg font-semibold text-slate-100 mb-2">Influencer events</h3>
+        <p className="mb-2">When enabled, rare <strong>influencer events</strong> spawn stochastically. Influencers represent radical actors whose ideas can spread beyond immediate neighbors, producing sudden ideological cascades and polarization spikes.</p>
+        <p className="mb-2"><strong>Spawn</strong>: Probability per timestep (0.0001–0.01). Default 0.0005. Influencers are more likely in <strong>ideologically uniform</strong> regions. <strong>Homogeneity threshold</strong> (0.5–1): Minimum fraction of neighbors that must share the cell’s sign for it to be a spawn candidate; default 0.85 = at least 85% agreement. Higher = only “echo chambers” qualify. <strong>Homogeneity sharpness</strong> γ (1–5): Exponent in spawn weight; higher γ = spawns concentrate in the most uniform regions; lower γ = more even spread across qualifying cells. Message is <strong>opposite</strong> to local mean with radical magnitude (radical min/max 0–50).</p>
+        <p className="mb-2"><strong>Reach</strong>: P(influenced) = e^(−d/R) + ε. Reach radius R (3–20), leak probability ε (0–0.05). Distance metric: Euclidean or Chebyshev. Weight w = e^(−d/R) × decay.</p>
+        <p className="mb-2"><strong>Effect</strong>: If sign(b) ≠ sign(M) and |M − b| &gt; backlash threshold → <strong>backlash</strong> (Δ = +β·w·sign(b)). Else → <strong>persuasion</strong> (Δ = α·w·(M − b)). Influence strength α (0–1), backlash strength β (0–2), backlash threshold (10–50).</p>
+        <p className="mb-2"><strong>Lifetime</strong>: TTL (timesteps). Decay: none, linear (a = 1 − t/TTL), or exponential (a = e^(−t/τ), τ = TTL/decayRate).</p>
+        <p className="mb-2"><strong>Visual indicators</strong>: Yellow flash on origin and affected cells (fades over 2–3 steps). Toast notification when an influencer spawns (auto-dismisses after 3 seconds).</p>
+        <p className="mb-2"><strong>Batch metrics</strong> (when influencers enabled): Influencer events count, avg reach size, district flips, belief variance (end).</p>
+      </section>
+
+      <section className="mb-6">
         <h3 className="text-lg font-semibold text-slate-100 mb-2">Neighborhood</h3>
         <p><strong>Von Neumann (4)</strong>: up, down, left, right. <strong>Moore (8)</strong>: plus the four diagonals. Edge cells only count neighbors that exist.</p>
       </section>
@@ -146,6 +158,12 @@ export function ConfigurationGuide() {
               <tr><td className="p-2 border-b border-slate-600">Max velocity</td><td className="p-2 border-b border-slate-600">Cap on velocity magnitude (0–10); prevents runaway growth.</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Damping near center</td><td className="p-2 border-b border-slate-600">Reduces velocity when |b| &lt; 15 (0–1).</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Damping near extremes</td><td className="p-2 border-b border-slate-600">Reduces velocity when |b| &gt; 35; prevents runaway polarization.</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Influencer events</td><td className="p-2 border-b border-slate-600">Rare radical actors spawn and influence agents beyond neighbors (toggle + spawn rate, homogeneity, reach, effect, decay).</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Spawn rate</td><td className="p-2 border-b border-slate-600">Probability per timestep (0.0001–0.01).</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Homogeneity threshold</td><td className="p-2 border-b border-slate-600">Min fraction of same-sign neighbors for spawn (0.5–1); higher = only echo chambers qualify.</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Homogeneity sharpness γ</td><td className="p-2 border-b border-slate-600">Exponent in spawn weight (1–5); higher = concentrate in most uniform regions.</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Reach radius / leak</td><td className="p-2 border-b border-slate-600">Distance scale R (3–20), global leak ε (0–0.05).</td></tr>
+              <tr><td className="p-2 border-b border-slate-600">Influence α / backlash β</td><td className="p-2 border-b border-slate-600">Persuasion rate (0–1), reactance strength (0–2).</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Step noise</td><td className="p-2 border-b border-slate-600">Random jitter each step (0 = off).</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Neighborhood</td><td className="p-2 border-b border-slate-600">4 or 8 neighbors per cell.</td></tr>
               <tr><td className="p-2 border-b border-slate-600">Initial beliefs</td><td className="p-2 border-b border-slate-600">Uniform, normal, bimodal, or Perlin.</td></tr>

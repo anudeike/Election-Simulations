@@ -14,7 +14,7 @@ import { ConfigurationGuide } from '@/components/ConfigurationGuide';
 import { BeliefColorMap } from '@/components/BeliefColorMap';
 import type { SimConfig, SimState, GridViewMode } from '@/lib/sim/types';
 import { runOneSimulation, type BatchRunEndStats } from '@/lib/sim/runBatch';
-import { DEFAULT_CONFIG, DEFAULT_UPDATE_FUNCTION, DEFAULT_EXTREMITY, DEFAULT_BACKLASH, DEFAULT_MOMENTUM } from '@/lib/sim/types';
+import { DEFAULT_CONFIG, DEFAULT_UPDATE_FUNCTION, DEFAULT_EXTREMITY, DEFAULT_BACKLASH, DEFAULT_MOMENTUM, DEFAULT_INFLUENCER } from '@/lib/sim/types';
 import { createSimState, gridDimensions } from '@/lib/sim/init';
 import { stepUpdate } from '@/lib/sim/update';
 import { runElection } from '@/lib/sim/election';
@@ -30,6 +30,7 @@ const INITIAL_CONFIG: SimConfig = {
   extremityConfig: DEFAULT_EXTREMITY,
   backlashConfig: DEFAULT_BACKLASH,
   momentumConfig: DEFAULT_MOMENTUM,
+  influencerConfig: DEFAULT_INFLUENCER,
   noise: 0,
   initialBeliefs: 'uniform',
   initialBeliefParam: 15,
@@ -56,6 +57,7 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [viewMode, setViewMode] = useState<GridViewMode>('belief');
   const [cellSize, setCellSize] = useState(12);
+  const [influencerToast, setInfluencerToast] = useState<string | null>(null);
 
   const [batchNumRuns, setBatchNumRuns] = useState(10);
   const [batchTimesteps, setBatchTimesteps] = useState(100);
@@ -83,6 +85,9 @@ export default function Home() {
   const runOneStep = useCallback(
     (s: SimState) => {
       stepUpdate(s, rngRef.current);
+      if (s.influencerSpawnedThisStep) {
+        setInfluencerToast('Influencer spawned!');
+      }
       computeHistogram(s);
       runElection(s);
       s.timestep++;
@@ -176,6 +181,10 @@ export default function Home() {
         avgVelocityMagnitudeHistory: result.avgVelocityMagnitudeHistory,
         oscillationCount: result.oscillationCount,
         timeToStabilization: result.timeToStabilization,
+        influencerEventCount: result.influencerEventCount,
+        influencerAvgReachSize: result.influencerAvgReachSize,
+        beliefVarianceHistory: result.beliefVarianceHistory,
+        districtFlipCount: result.districtFlipCount,
       });
       setBatchResults([...runHistories]);
       setBatchEndStats([...endStats]);
@@ -191,6 +200,12 @@ export default function Home() {
 
   const stateRef = useRef<SimState | null>(null);
   stateRef.current = state;
+
+  useEffect(() => {
+    if (!influencerToast) return;
+    const t = setTimeout(() => setInfluencerToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [influencerToast]);
 
   useEffect(() => {
     if (!running) return;
@@ -415,7 +430,17 @@ export default function Home() {
                 <span className="text-slate-400 text-sm">{cellSize}</span>
               </div>
 
-              <SimulationCanvas state={state} viewMode={viewMode} cellSize={cellSize} />
+              <div className="relative">
+                {influencerToast && (
+                  <div
+                    className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-4 py-2 rounded-lg bg-amber-500/95 text-slate-900 font-medium text-sm shadow-lg"
+                    role="alert"
+                  >
+                    {influencerToast}
+                  </div>
+                )}
+                <SimulationCanvas state={state} viewMode={viewMode} cellSize={cellSize} />
+              </div>
 
               <BeliefColorMap />
 
@@ -528,6 +553,42 @@ export default function Home() {
                               .reduce((a, s) => a + s.timeToStabilization, 0) /
                             batchEndStats.filter((s) => s.timeToStabilization >= 0).length
                           ).toFixed(1)
+                        : '—'}
+                    </dd>
+                  </dl>
+                </div>
+              )}
+              {config.influencerConfig.enabled && batchEndStats.length > 0 && (
+                <div className="rounded-lg bg-slate-800/80 border border-slate-700 p-4 min-w-[280px]">
+                  <h3 className="text-sm font-semibold text-slate-200 mb-2">
+                    Influencer metrics (batch)
+                  </h3>
+                  <dl className="grid grid-cols-2 gap-1 text-sm">
+                    <dt className="text-slate-400">Influencer events</dt>
+                    <dd className="text-slate-100" title="Total spawns across all runs">
+                      {(batchEndStats.reduce((a, s) => a + s.influencerEventCount, 0) / batchEndStats.length).toFixed(1)}
+                    </dd>
+                    <dt className="text-slate-400">Avg reach size</dt>
+                    <dd className="text-slate-100" title="Avg agents influenced per influencer event">
+                      {(batchEndStats.reduce((a, s) => a + s.influencerAvgReachSize, 0) / batchEndStats.length).toFixed(1)}
+                    </dd>
+                    <dt className="text-slate-400">District flips</dt>
+                    <dd className="text-slate-100" title="District winner changes during run">
+                      {(batchEndStats.reduce((a, s) => a + s.districtFlipCount, 0) / batchEndStats.length).toFixed(1)}
+                    </dd>
+                    <dt className="text-slate-400">Belief variance (end)</dt>
+                    <dd className="text-slate-100" title="Avg final variance across runs">
+                      {batchEndStats[0]?.beliefVarianceHistory?.length
+                        ? (
+                            batchEndStats.reduce(
+                              (a, s) =>
+                                a +
+                                (s.beliefVarianceHistory?.length
+                                  ? s.beliefVarianceHistory[s.beliefVarianceHistory.length - 1] ?? 0
+                                  : 0),
+                              0
+                            ) / batchEndStats.length
+                          ).toFixed(2)
                         : '—'}
                     </dd>
                   </dl>

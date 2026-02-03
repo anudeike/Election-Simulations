@@ -28,6 +28,38 @@ export interface MomentumConfig {
   };
 }
 
+/** Influencer events: rare, radical actors with noisy spatial reach. */
+export interface InfluencerConfig {
+  enabled: boolean;
+  /** Base spawn probability per timestep (e.g. 0.0001–0.001). */
+  spawnRate: number;
+  /** Homogeneity threshold s_min ∈ [0.5, 1]; spawn bias toward uniform regions. */
+  homogeneityThreshold: number;
+  /** Homogeneity sharpness γ ∈ [1, 5]. */
+  homogeneitySharpness: number;
+  /** Message magnitude range (radical). */
+  radicalMin: number;
+  radicalMax: number;
+  /** Base reach radius R ∈ [3, 20]. */
+  reachRadius: number;
+  /** Global leak probability ε ∈ [0, 0.05]. */
+  reachLeakProbability: number;
+  /** Distance metric for reach. */
+  distanceMetric: 'euclidean' | 'chebyshev';
+  /** Persuasion strength α ∈ [0, 1]. */
+  influenceStrength: number;
+  /** Backlash strength β ∈ [0, 2]. */
+  backlashStrength: number;
+  /** Backlash threshold (10–50); |M - b_i| > this triggers reactance. */
+  backlashThreshold: number;
+  /** Time-to-live (timesteps). */
+  ttl: number;
+  /** Decay type. */
+  decayType: 'none' | 'linear' | 'exp';
+  /** For exp: τ = ttl / decayRate; higher = faster decay. */
+  decayRate: number;
+}
+
 /** Backlash: repulsion when exposed to extreme opposing beliefs. */
 export interface BacklashConfig {
   enabled: boolean;
@@ -71,6 +103,8 @@ export interface SimConfig {
   backlashConfig: BacklashConfig;
   /** Belief momentum (inertia, overshoot). */
   momentumConfig: MomentumConfig;
+  /** Influencer events (rare, radical actors). */
+  influencerConfig: InfluencerConfig;
   /** Optional noise added each step [-noise, noise] (0 = off). */
   noise: number;
   /** Initial belief distribution. */
@@ -124,6 +158,36 @@ export interface SimState {
   initialBeliefStd: number;
   /** Belief velocity (momentum) per agent; parallel to beliefs. */
   velocity: Float32Array;
+  /** Active influencer events (mutable; managed by update). */
+  activeInfluencers: InfluencerEvent[];
+  /** Count of influencer spawns this run (for batch metrics). */
+  influencerSpawnCount: number;
+  /** Total agent-steps influenced this run (for batch metrics). */
+  influencerTotalInfluenced: number;
+  /** Cells to flash yellow (influencer origins + affected). Updated each step. */
+  lastInfluencerFlashCells: number[];
+  /** Timestep when lastInfluencerFlashCells was set (for fade). */
+  lastInfluencerFlashTimestep: number;
+  /** True when an influencer spawned this step (for UI notification). */
+  influencerSpawnedThisStep: boolean;
+}
+
+/** Active influencer event at runtime. */
+export interface InfluencerEvent {
+  /** Origin cell x. */
+  originX: number;
+  /** Origin cell y. */
+  originY: number;
+  /** Message (radical belief value). */
+  message: number;
+  /** Age in timesteps (0 = just spawned). */
+  age: number;
+  /** Time-to-live. */
+  ttl: number;
+  /** Decay type. */
+  decayType: 'none' | 'linear' | 'exp';
+  /** For exp decay: τ = ttl / decayRate. */
+  decayRate: number;
 }
 
 /** View mode for the grid. */
@@ -151,6 +215,25 @@ export const DEFAULT_MOMENTUM: MomentumConfig = {
   damping: { nearCenter: 0, nearExtremes: 0 },
 };
 
+/** Default influencer config (disabled). */
+export const DEFAULT_INFLUENCER: InfluencerConfig = {
+  enabled: false,
+  spawnRate: 0.0005,
+  homogeneityThreshold: 0.85,
+  homogeneitySharpness: 3,
+  radicalMin: 35,
+  radicalMax: 50,
+  reachRadius: 8,
+  reachLeakProbability: 0.01,
+  distanceMetric: 'euclidean',
+  influenceStrength: 0.3,
+  backlashStrength: 1,
+  backlashThreshold: 20,
+  ttl: 20,
+  decayType: 'linear',
+  decayRate: 1,
+};
+
 /** Default backlash config (disabled). */
 export const DEFAULT_BACKLASH: BacklashConfig = {
   enabled: false,
@@ -174,6 +257,7 @@ export const DEFAULT_CONFIG: Partial<SimConfig> = {
   extremityConfig: DEFAULT_EXTREMITY,
   backlashConfig: DEFAULT_BACKLASH,
   momentumConfig: DEFAULT_MOMENTUM,
+  influencerConfig: DEFAULT_INFLUENCER,
   noise: 0,
   initialBeliefs: 'uniform',
   initialBeliefParam: 15,

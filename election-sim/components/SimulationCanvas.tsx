@@ -43,7 +43,7 @@ export function SimulationCanvas({ state, viewMode, cellSize }: SimulationCanvas
       canvas.height = pixelH;
     }
 
-    const { beliefs, districtId, districtWinners, activeMask, borderSegments } = state;
+    const { beliefs, districtId, districtWinners, activeMask, borderSegments, lastInfluencerFlashCells, lastInfluencerFlashTimestep } = state;
 
     // Background
     ctx.fillStyle = '#1e293b';
@@ -102,6 +102,20 @@ export function SimulationCanvas({ state, viewMode, cellSize }: SimulationCanvas
         ctx.moveTo(x0, y0);
         ctx.lineTo(x1, y1);
         ctx.stroke();
+      }
+    }
+
+    if (lastInfluencerFlashCells.length > 0 && lastInfluencerFlashTimestep >= 0) {
+      const age = state.timestep - lastInfluencerFlashTimestep;
+      if (age <= 2) {
+        const opacity = 1 - age / 3;
+        ctx.fillStyle = `rgba(250, 204, 21, ${opacity * 0.6})`;
+        for (const idx of lastInfluencerFlashCells) {
+          if (!activeMask[idx]) continue;
+          const x = (idx % width) * cellSize;
+          const y = Math.floor(idx / width) * cellSize;
+          ctx.fillRect(x, y, cellSize, cellSize);
+        }
       }
     }
   }, [state, viewMode, cellSize]);

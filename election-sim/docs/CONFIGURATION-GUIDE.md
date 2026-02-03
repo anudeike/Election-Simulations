@@ -9,7 +9,7 @@ This document explains all simulation parameters and update functions in the Opi
 - **Grid**: Each cell has one agent with a **belief** in the range **[-50, 50]**.
 - **Voting**: At every timestep, agents vote **red** if belief ≥ 0, **blue** if belief < 0.
 - **Districts**: The grid is divided into fixed districts. Each district’s winner is the majority color (red/blue); ties show as purple.
-- **Update**: Each timestep, every agent updates their belief based on their **neighbors** and the chosen **update function**. Beliefs are then clamped to [-50, 50].
+- **Update**: Each timestep, every agent updates their belief based on their **neighbors** and the chosen **update function**. Optional **influencer events** can add additional influence from rare radical actors. Beliefs are then clamped to [-50, 50].
 
 ---
 
@@ -21,8 +21,9 @@ All update functions use the same pipeline:
 2. Compute **distance** \(d_i = |b_i - m_i|\) (how far the agent’s belief is from that mean).
 3. Compute **susceptibility** \(s_i \in [0, 1]\) from the chosen formula (below).
 4. Optionally apply **extremity stubbornness** (see section below).
-5. Update: \(b_i^{new} = b_i + s_i (m_i - b_i)\) (move a fraction \(s_i\) toward the mean).
-6. Optional **step noise** can be added; then clamp to [-50, 50].
+5. Compute **backlash** term (if enabled) and **influencer** term (if enabled).
+6. Update: \(b_i^{new} = b_i + s_i \cdot \Delta_i^{local} + \Delta_i^{influencer}\) (local influence plus optional influencer influence).
+7. Optional **step noise** can be added; then clamp to [-50, 50].
 
 So: **higher susceptibility** → agent moves more toward neighbors; **lower** → agent stays put.
 
@@ -153,6 +154,71 @@ When **enabled**, agents accumulate **velocity** (momentum) instead of updating 
 
 ---
 
+## Influencer events
+
+When **enabled**, rare **influencer events** spawn stochastically. Influencers represent radical actors whose ideas can spread beyond immediate neighbors, producing sudden ideological cascades and polarization spikes.
+
+**Conceptual model**: An influencer is a time-limited event at a grid cell that emits a **message** (radical belief value). Agents within a noisy spatial reach can be influenced. The update becomes: \(b_i^{new} = b_i + \Delta_i^{local} + \Delta_i^{influencer}\).
+
+### Spawn logic
+
+- **Spawn rate** (0.0001–0.01): Probability per timestep that an influencer spawns. Default 0.0005. Very small values keep events rare.
+- **Homogeneity bias**: Influencers are more likely to appear in **ideologically uniform** regions. For candidate cell \(i\), let \(S_i\) = fraction of neighbors with the same sign as \(b_i\) (0 = all disagree, 1 = all agree). Spawn weight ∝ \(\max(0, S_i - s_{min})^\gamma\).
+  - **Homogeneity threshold** \(s_{min}\) (0.5–1): Minimum uniformity for a cell to be a spawn candidate. If \(S_i < s_{min}\), the cell has zero spawn weight and cannot be chosen. Default 0.85 means only cells where **at least 85%** of neighbors share the cell’s sign (red or blue) can spawn. Higher \(s_{min}\) → only very uniform “echo chambers” qualify; lower \(s_{min}\) → mixed regions can spawn too.
+  - **Homogeneity sharpness** γ (1–5): Exponent in the spawn weight. Controls how much more likely **very** uniform regions are vs. barely-qualifying ones. With γ = 1 (linear), a cell at 95% agreement gets 2× the weight of one at 90% (when \(s_{min} = 0.85\)). With γ = 3, that same 95% cell gets **8×** the weight of 90%. Higher γ → spawns concentrate heavily in the most uniform regions; lower γ → more even spread across all qualifying cells.
+- **Oppositional constraint**: The influencer’s message is **opposite in sign** to the local mean and has **radical magnitude** in [radicalMin, radicalMax].
+  - **Radical min** (0–50): Minimum message magnitude. Default 35.
+  - **Radical max** (0–50): Maximum message magnitude. Default 50.
+
+### Reach model
+
+Influence spreads with **spatial radius** plus **stochastic leakage** (so ideas can occasionally reach distant agents).
+
+- **Reach radius R** (3–20): Base scale for distance decay. Default 8.
+- **Leak probability ε** (0–0.05): Global chance that any agent hears the message regardless of distance. Default 0.01. Allows “platform amplification” effects.
+- **Distance metric**: **Euclidean** (straight-line) or **Chebyshev** (max of Δx, Δy). Affects how reach is computed on the grid.
+
+**Reach probability**: \(P(\text{influenced}) = e^{-d/R} + \varepsilon\) (clamped to 1).
+
+**Influence weight** (if influenced): \(w_i = e^{-d/R}\), multiplied by decay amplitude.
+
+### Influence effect (persuasion vs. backlash)
+
+For each influenced agent \(i\) with belief \(b_i\) and message \(M\):
+
+- If \(\text{sign}(b_i) \neq \text{sign}(M)\) **and** \(|M - b_i| > \text{backlashThreshold}\): **Reactance backlash** — \(\Delta_i^{inf} = +\beta \cdot w_i \cdot \text{sign}(b_i)\) (agent doubles down).
+- Else: **Persuasion** — \(\Delta_i^{inf} = \alpha \cdot w_i \cdot (M - b_i)\) (agent moves toward message).
+
+Parameters:
+
+- **Influence strength α** (0–1): Persuasion rate. Default 0.3.
+- **Backlash strength β** (0–2): How strongly agents react against opposing messages. Default 1.
+- **Backlash threshold** (10–50): \(|M - b_i|\) must exceed this to trigger backlash. Default 20.
+
+### Lifetime and decay
+
+Influencers are temporary. Each has a **TTL** (time-to-live) in timesteps. Default 20.
+
+- **Decay type**:
+  - **None**: Full strength until TTL expires.
+  - **Linear**: Amplitude \(a(t) = 1 - t/\text{TTL}\).
+  - **Exponential**: \(a(t) = e^{-t/\tau}\) with \(\tau = \text{TTL} / \text{decayRate}\).
+- **Decay rate** (0.5–5): For exponential only. Higher = faster decay. Default 1.
+
+### Visual indicators
+
+- **Yellow flash**: When an influencer is active, the **origin cell** and all **affected cells** (those receiving influence) flash yellow. The flash fades over 2–3 steps.
+- **Toast notification**: When an influencer spawns, a notification appears above the canvas (“Influencer spawned!”) and auto-dismisses after 3 seconds.
+
+### Batch metrics (when influencers enabled)
+
+- **Influencer events**: Average number of spawns per run.
+- **Avg reach size**: Average number of agents influenced per influencer event.
+- **District flips**: Average number of district winner changes during the run.
+- **Belief variance (end)**: Average final belief variance across runs.
+
+---
+
 ## Neighborhood
 
 - **Von Neumann (4)**: Only up, down, left, right.
@@ -224,6 +290,20 @@ Each run uses the **same** configuration but a **different** seed (derived from 
 | Max velocity       | Cap on velocity magnitude (0–10); prevents runaway growth. |
 | Damping near center | Reduces velocity when \|b\| < 15 (0–1). |
 | Damping near extremes | Reduces velocity when \|b\| > 35; prevents runaway polarization. |
+| Influencer events  | When enabled, rare radical actors spawn and influence agents beyond neighbors. |
+| Spawn rate         | Probability per timestep that an influencer spawns (0.0001–0.01). |
+| Homogeneity threshold | Min fraction of same-sign neighbors for spawn; 0.85 = at least 85% agreement. Higher = only echo chambers qualify. |
+| Homogeneity sharpness | Exponent γ in spawn weight; higher = spawns concentrate in most uniform regions; lower = more even spread. |
+| Radical min/max    | Message magnitude range (0–50). |
+| Reach radius       | Distance scale R for influence decay (3–20). |
+| Leak probability   | Global chance to hear message regardless of distance (0–0.05). |
+| Distance metric    | Euclidean or Chebyshev for reach. |
+| Influence strength α | Persuasion rate (0–1). |
+| Backlash strength β | Reactance strength (0–2). |
+| Backlash threshold | \|M − b_i\| must exceed this to trigger backlash (10–50). |
+| TTL               | Influencer lifetime in timesteps. |
+| Decay type        | None, linear, or exponential. |
+| Decay rate        | For exponential: τ = TTL / decayRate. |
 | Step noise         | Random jitter added each step (0 = off). |
 | Neighborhood       | 4 or 8 neighbors per cell. |
 | Initial beliefs    | How the grid is initialized (uniform, normal, bimodal, or Perlin). |

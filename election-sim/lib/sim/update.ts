@@ -1,5 +1,6 @@
 import type { SimConfig, SimState, UpdateFunctionConfig, ExtremityConfig, MomentumConfig } from './types';
 import { computeBacklashDelta } from './backlash';
+import { trySpawnInfluencer, ageInfluencers, computeInfluencerDeltas } from './influencers';
 import { randomInRange } from '../rng';
 
 const BELIEF_MIN = -50;
@@ -115,11 +116,34 @@ function applyVelocityDamping(v: number, bi: number, mc: MomentumConfig): number
  */
 export function stepUpdate(state: SimState, rng: () => number): void {
   const { config, beliefs, nextBeliefs, activeMask, velocity } = state;
-  const { width, height, neighborhood, updateFunction, extremityConfig, backlashConfig, momentumConfig, noise } = config;
+  const { width, height, neighborhood, updateFunction, extremityConfig, backlashConfig, momentumConfig, influencerConfig, noise } = config;
   const n = beliefs.length;
   const useMomentum = momentumConfig.enabled;
   const λ = Math.max(0, Math.min(1, momentumConfig.retention));
   const vMax = Math.max(0, Math.min(10, momentumConfig.maxVelocity));
+
+  state.influencerSpawnedThisStep = false;
+  if (influencerConfig.enabled) {
+    ageInfluencers(state);
+    const spawned = trySpawnInfluencer(state, rng);
+    if (spawned) {
+      state.activeInfluencers.push(spawned);
+      state.influencerSpawnCount++;
+      state.influencerSpawnedThisStep = true;
+    }
+  }
+
+  const influencerResult = influencerConfig.enabled ? computeInfluencerDeltas(state, rng) : null;
+  if (influencerResult) {
+    state.influencerTotalInfluenced += influencerResult.influencedCount;
+    const width = config.width;
+    const flashCells = new Set(influencerResult.affectedIndices);
+    for (const inf of state.activeInfluencers) {
+      flashCells.add(inf.originY * width + inf.originX);
+    }
+    state.lastInfluencerFlashCells = Array.from(flashCells);
+    state.lastInfluencerFlashTimestep = state.timestep;
+  }
 
   for (let idx = 0; idx < n; idx++) {
     if (!activeMask[idx]) {
@@ -145,7 +169,8 @@ export function stepUpdate(state: SimState, rng: () => number): void {
     si = applyExtremity(si, bi, extremityConfig);
 
     const Δi = computeBacklashDelta(bi, mi, neighborBeliefs, backlashConfig);
-    const scaledΔ = si * Δi;
+    let scaledΔ = si * Δi;
+    if (influencerResult) scaledΔ += influencerResult.deltas[idx];
 
     let newBelief: number;
     if (useMomentum) {

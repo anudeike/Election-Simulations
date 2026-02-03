@@ -121,6 +121,12 @@ export function createSimState(config: SimConfig): SimState {
     initialBeliefMean,
     initialBeliefStd,
     velocity,
+    activeInfluencers: [],
+    influencerSpawnCount: 0,
+    influencerTotalInfluenced: 0,
+    lastInfluencerFlashCells: [],
+    lastInfluencerFlashTimestep: -1,
+    influencerSpawnedThisStep: false,
   };
 
   return state;

@@ -8,7 +8,7 @@ describe('neighbor indexing', () => {
     const idx = 2 * width + 2;
     const neighbors = getNeighborIndices(idx, width, height, 'von-neumann');
     expect(neighbors).toHaveLength(4);
-    expect(neighbors.sort()).toEqual([7, 11, 12, 17]);
+    expect(neighbors.sort((a, b) => a - b)).toEqual([7, 11, 13, 17]);
   });
 
   it('Moore returns 8 neighbors for interior cell', () => {

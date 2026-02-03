@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
-import type { SimConfig, UpdateFunctionConfig, ExtremityConfig, BacklashConfig, MomentumConfig } from '@/lib/sim/types';
+import type { SimConfig, UpdateFunctionConfig, ExtremityConfig, BacklashConfig, MomentumConfig, InfluencerConfig } from '@/lib/sim/types';
 import { gridDimensions } from '@/lib/sim/init';
 import { parseAndValidateConfig, downloadConfig } from '@/lib/sim/configIO';
 import { cn } from '@/lib/utils';
@@ -460,6 +460,275 @@ export function ConfigPanel({ config, onChange, disabled }: ConfigPanelProps) {
               className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
             />
           </div>
+        </>
+      )}
+
+      <div>
+        <label className="block text-sm text-slate-300 mb-1">Influencer events</label>
+        <label className="flex items-center gap-2 text-sm text-slate-300" title="Influencers represent rare, high-impact ideological shocks.">
+          <input
+            type="checkbox"
+            checked={config.influencerConfig.enabled}
+            onChange={(e) => update({ influencerConfig: { ...config.influencerConfig, enabled: e.target.checked } })}
+            className="rounded"
+          />
+          Enable
+        </label>
+        <p className="text-xs text-slate-400 mt-0.5">Rare radical actors with noisy spatial reach. Leak probability allows ideas to spread beyond local neighborhoods.</p>
+      </div>
+      {config.influencerConfig.enabled && (
+        <>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Spawn rate (0.0001–0.01)</label>
+            <input
+              type="number"
+              min={0.0001}
+              max={0.01}
+              step={0.0001}
+              value={config.influencerConfig.spawnRate}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    spawnRate: Math.max(0.0001, Math.min(0.01, +e.target.value || 0.0005)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Homogeneity threshold (0.5–1)</label>
+            <input
+              type="range"
+              min={0.5}
+              max={1}
+              step={0.05}
+              value={config.influencerConfig.homogeneityThreshold}
+              onChange={(e) =>
+                update({ influencerConfig: { ...config.influencerConfig, homogeneityThreshold: +e.target.value } })
+              }
+              className="w-full"
+            />
+            <span className="text-xs text-slate-400">{config.influencerConfig.homogeneityThreshold}</span>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Homogeneity sharpness γ (1–5)</label>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={config.influencerConfig.homogeneitySharpness}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    homogeneitySharpness: Math.max(1, Math.min(5, +e.target.value || 3)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Radical min (0–50)</label>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              value={config.influencerConfig.radicalMin}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    radicalMin: Math.max(0, Math.min(50, +e.target.value || 35)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Radical max (0–50)</label>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              value={config.influencerConfig.radicalMax}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    radicalMax: Math.max(0, Math.min(50, +e.target.value || 50)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Reach radius (3–20)</label>
+            <input
+              type="number"
+              min={3}
+              max={20}
+              value={config.influencerConfig.reachRadius}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    reachRadius: Math.max(3, Math.min(20, +e.target.value || 8)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Leak probability (0–0.05)</label>
+            <input
+              type="number"
+              min={0}
+              max={0.05}
+              step={0.005}
+              value={config.influencerConfig.reachLeakProbability}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    reachLeakProbability: Math.max(0, Math.min(0.05, +e.target.value || 0.01)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+            <p className="text-xs text-slate-400 mt-0.5">Allows ideas to spread beyond local neighborhoods.</p>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Distance metric</label>
+            <select
+              value={config.influencerConfig.distanceMetric}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    distanceMetric: e.target.value as InfluencerConfig['distanceMetric'],
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            >
+              <option value="euclidean">Euclidean</option>
+              <option value="chebyshev">Chebyshev</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Influence strength α (0–1)</label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={config.influencerConfig.influenceStrength}
+              onChange={(e) =>
+                update({ influencerConfig: { ...config.influencerConfig, influenceStrength: +e.target.value } })
+              }
+              className="w-full"
+            />
+            <span className="text-xs text-slate-400">{config.influencerConfig.influenceStrength}</span>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Backlash strength β (0–2)</label>
+            <input
+              type="range"
+              min={0}
+              max={2}
+              step={0.1}
+              value={config.influencerConfig.backlashStrength}
+              onChange={(e) =>
+                update({ influencerConfig: { ...config.influencerConfig, backlashStrength: +e.target.value } })
+              }
+              className="w-full"
+            />
+            <span className="text-xs text-slate-400">{config.influencerConfig.backlashStrength}</span>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Backlash threshold (10–50)</label>
+            <input
+              type="number"
+              min={10}
+              max={50}
+              value={config.influencerConfig.backlashThreshold}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    backlashThreshold: Math.max(10, Math.min(50, +e.target.value || 20)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">TTL (timesteps)</label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={config.influencerConfig.ttl}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    ttl: Math.max(1, Math.min(200, +e.target.value || 20)),
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Decay type</label>
+            <select
+              value={config.influencerConfig.decayType}
+              onChange={(e) =>
+                update({
+                  influencerConfig: {
+                    ...config.influencerConfig,
+                    decayType: e.target.value as InfluencerConfig['decayType'],
+                  },
+                })
+              }
+              className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+            >
+              <option value="none">None</option>
+              <option value="linear">Linear</option>
+              <option value="exp">Exponential</option>
+            </select>
+          </div>
+          {config.influencerConfig.decayType === 'exp' && (
+            <div>
+              <label className="block text-sm text-slate-300 mb-1">Decay rate (0.5–5)</label>
+              <input
+                type="number"
+                min={0.5}
+                max={5}
+                step={0.1}
+                value={config.influencerConfig.decayRate}
+                onChange={(e) =>
+                  update({
+                    influencerConfig: {
+                      ...config.influencerConfig,
+                      decayRate: Math.max(0.5, Math.min(5, +e.target.value || 1)),
+                    },
+                  })
+                }
+                className="w-full px-2 py-1 rounded bg-slate-700 text-slate-100 border border-slate-600"
+              />
+              <p className="text-xs text-slate-400 mt-0.5">Higher = faster decay. τ = ttl / decayRate.</p>
+            </div>
+          )}
         </>
       )}
 

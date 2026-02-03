@@ -1,10 +1,11 @@
-import type { SimConfig, UpdateFunctionConfig, ExtremityConfig, BacklashConfig, MomentumConfig } from './types';
+import type { SimConfig, UpdateFunctionConfig, ExtremityConfig, BacklashConfig, MomentumConfig, InfluencerConfig } from './types';
 import { gridDimensions } from './init';
 import {
   DEFAULT_UPDATE_FUNCTION,
   DEFAULT_EXTREMITY,
   DEFAULT_BACKLASH,
   DEFAULT_MOMENTUM,
+  DEFAULT_INFLUENCER,
 } from './types';
 
 const UPDATE_TYPES = ['average', 'bounded_confidence', 'exponential_decay', 'rational_decay', 'logistic'] as const;
@@ -14,6 +15,8 @@ const DISTRICTING = ['rectangular', 'region-growing'] as const;
 const TRIGGER_TYPES = ['gap', 'extremity', 'mean'] as const;
 const TRIGGER_SCOPES = ['per_neighbor', 'per_agent'] as const;
 const BACKLASH_MODES = ['piecewise', 'smooth', 'identity_push'] as const;
+const INFLUENCER_DECAY_TYPES = ['none', 'linear', 'exp'] as const;
+const DISTANCE_METRICS = ['euclidean', 'chebyshev'] as const;
 
 function isObject(x: unknown): x is Record<string, unknown> {
   return x != null && typeof x === 'object' && !Array.isArray(x);
@@ -95,6 +98,31 @@ function validateBacklashConfig(b: unknown): BacklashConfig {
   return cfg;
 }
 
+function validateInfluencerConfig(i: unknown): InfluencerConfig {
+  if (!isObject(i)) return DEFAULT_INFLUENCER;
+  const cfg = { ...DEFAULT_INFLUENCER };
+  cfg.enabled = i.enabled === true;
+  if (isNum(i.spawnRate)) cfg.spawnRate = Math.max(0.0001, Math.min(0.01, i.spawnRate));
+  if (isNum(i.homogeneityThreshold)) cfg.homogeneityThreshold = Math.max(0.5, Math.min(1, i.homogeneityThreshold));
+  if (isNum(i.homogeneitySharpness)) cfg.homogeneitySharpness = Math.max(1, Math.min(5, i.homogeneitySharpness));
+  if (isNum(i.radicalMin)) cfg.radicalMin = Math.max(0, Math.min(50, i.radicalMin));
+  if (isNum(i.radicalMax)) cfg.radicalMax = Math.max(0, Math.min(50, i.radicalMax));
+  if (isNum(i.reachRadius)) cfg.reachRadius = Math.max(3, Math.min(20, i.reachRadius));
+  if (isNum(i.reachLeakProbability)) cfg.reachLeakProbability = Math.max(0, Math.min(0.05, i.reachLeakProbability));
+  if (typeof i.distanceMetric === 'string' && DISTANCE_METRICS.includes(i.distanceMetric as (typeof DISTANCE_METRICS)[number])) {
+    cfg.distanceMetric = i.distanceMetric as InfluencerConfig['distanceMetric'];
+  }
+  if (isNum(i.influenceStrength)) cfg.influenceStrength = Math.max(0, Math.min(1, i.influenceStrength));
+  if (isNum(i.backlashStrength)) cfg.backlashStrength = Math.max(0, Math.min(2, i.backlashStrength));
+  if (isNum(i.backlashThreshold)) cfg.backlashThreshold = Math.max(10, Math.min(50, i.backlashThreshold));
+  if (isNum(i.ttl)) cfg.ttl = Math.max(1, Math.min(200, i.ttl));
+  if (typeof i.decayType === 'string' && INFLUENCER_DECAY_TYPES.includes(i.decayType as (typeof INFLUENCER_DECAY_TYPES)[number])) {
+    cfg.decayType = i.decayType as InfluencerConfig['decayType'];
+  }
+  if (isNum(i.decayRate)) cfg.decayRate = Math.max(0.1, Math.min(5, i.decayRate));
+  return cfg;
+}
+
 function validateMomentumConfig(m: unknown): MomentumConfig {
   if (!isObject(m)) return DEFAULT_MOMENTUM;
   const cfg = { ...DEFAULT_MOMENTUM };
@@ -131,6 +159,7 @@ export function parseAndValidateConfig(json: string): SimConfig | null {
   const extremityConfig = validateExtremityConfig(raw.extremityConfig);
   const backlashConfig = validateBacklashConfig(raw.backlashConfig);
   const momentumConfig = validateMomentumConfig(raw.momentumConfig);
+  const influencerConfig = validateInfluencerConfig(raw.influencerConfig);
 
   const neighborhood =
     typeof raw.neighborhood === 'string' && NEIGHBORHOODS.includes(raw.neighborhood as (typeof NEIGHBORHOODS)[number])
@@ -160,6 +189,7 @@ export function parseAndValidateConfig(json: string): SimConfig | null {
     extremityConfig,
     backlashConfig,
     momentumConfig,
+    influencerConfig,
     noise: isNum(raw.noise) ? Math.max(0, Math.min(5, raw.noise)) : 0,
     initialBeliefs,
     initialBeliefParam: isNum(raw.initialBeliefParam) ? Math.max(1, Math.min(50, raw.initialBeliefParam)) : 15,

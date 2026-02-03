@@ -41,6 +41,14 @@ export interface BatchRunEndStats {
   oscillationCount: number;
   /** First timestep when max|v| < 0.01 for 5 consecutive steps, or -1. */
   timeToStabilization: number;
+  /** Influencer metrics (when influencers enabled). */
+  influencerEventCount: number;
+  /** Average agents influenced per influencer event. */
+  influencerAvgReachSize: number;
+  /** Belief variance at each timestep. */
+  beliefVarianceHistory: number[];
+  /** Number of district winner flips during run. */
+  districtFlipCount: number;
 }
 
 function getEndOfRunStats(s: SimState): BatchRunEndStats {
@@ -78,6 +86,11 @@ function getEndOfRunStats(s: SimState): BatchRunEndStats {
   }
   const seatDiff = redSeats - blueSeats;
 
+  const influencerEventCount = s.influencerSpawnCount ?? 0;
+  const influencerTotalInfluenced = s.influencerTotalInfluenced ?? 0;
+  const influencerAvgReachSize =
+    influencerEventCount > 0 ? influencerTotalInfluenced / influencerEventCount : 0;
+
   return {
     agentDiff,
     seatDiff,
@@ -93,6 +106,10 @@ function getEndOfRunStats(s: SimState): BatchRunEndStats {
     avgVelocityMagnitudeHistory: [], // filled in runOneSimulation
     oscillationCount: 0,
     timeToStabilization: -1,
+    influencerEventCount,
+    influencerAvgReachSize,
+    beliefVarianceHistory: [], // filled in runOneSimulation
+    districtFlipCount: 0, // filled in runOneSimulation
   };
 }
 
@@ -133,6 +150,10 @@ export interface BatchRunResult {
   avgVelocityMagnitudeHistory: number[];
   oscillationCount: number;
   timeToStabilization: number;
+  influencerEventCount: number;
+  influencerAvgReachSize: number;
+  beliefVarianceHistory: number[];
+  districtFlipCount: number;
 }
 
 /**
@@ -156,6 +177,7 @@ export function runOneSimulation(
   const rng = createSeededRng(cfg.seed!);
   const history: SharePoint[] = [];
   const avgVelocityMagnitudeHistory: number[] = [];
+  const beliefVarianceHistory: number[] = [];
   const STAB_THRESHOLD = 0.01;
   const STAB_CONSECUTIVE = 5;
   let oscillationCount = 0;
@@ -163,12 +185,16 @@ export function runOneSimulation(
   let prevMeanBelief: number | null = null;
   let prevMeanDirection = 0;
   let stableCount = 0;
+  let districtFlipCount = 0;
+  let prevDistrictWinners: Int8Array | null = null;
 
   const red0 = getRedShare(s);
   history.push({ red: red0, blue: 100 - red0 });
   if (cfg.momentumConfig.enabled) {
     avgVelocityMagnitudeHistory.push(avgVelocityMagnitude(s));
   }
+  const { std: std0 } = beliefStats(s.beliefs, s.activeMask);
+  beliefVarianceHistory.push(std0 * std0);
 
   for (let t = 0; t < numSteps - 1; t++) {
     stepUpdate(s, rng);
@@ -177,6 +203,16 @@ export function runOneSimulation(
     s.timestep++;
     const red = getRedShare(s);
     history.push({ red, blue: 100 - red });
+
+    const { std } = beliefStats(s.beliefs, s.activeMask);
+    beliefVarianceHistory.push(std * std);
+
+    if (prevDistrictWinners) {
+      for (let d = 0; d < s.districtWinners.length; d++) {
+        if (s.districtWinners[d] !== prevDistrictWinners[d]) districtFlipCount++;
+      }
+    }
+    prevDistrictWinners = new Int8Array(s.districtWinners);
 
     if (cfg.momentumConfig.enabled) {
       avgVelocityMagnitudeHistory.push(avgVelocityMagnitude(s));
@@ -206,5 +242,7 @@ export function runOneSimulation(
   endStats.avgVelocityMagnitudeHistory = avgVelocityMagnitudeHistory;
   endStats.oscillationCount = oscillationCount;
   endStats.timeToStabilization = timeToStabilization;
+  endStats.beliefVarianceHistory = beliefVarianceHistory;
+  endStats.districtFlipCount = districtFlipCount;
   return { history, ...endStats };
 }
